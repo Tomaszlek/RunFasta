@@ -49,7 +49,7 @@ def display_page(current_page, auth_data):
 
 
 @app.callback(
-    Output('current-page', 'data'),
+    Output('current-page', 'data', allow_duplicate=True),
     [Input('nav-to-register', 'n_clicks'),
      Input('nav-to-login', 'n_clicks')],
     prevent_initial_call=True
@@ -73,7 +73,16 @@ def on_auth_change(auth_data):
     return 'dashboard' if auth_data else 'login'
 
 
-# ==================== LAYOUTY DASHBOARDU ====================
+@app.callback(
+    [Output('session-auth', 'data', allow_duplicate=True), Output('current-page', 'data', allow_duplicate=True)],
+    Input('logout-btn', 'n_clicks'),
+    prevent_initial_call=True
+)
+def logout(n):
+    if not n:
+        return dash.no_update, dash.no_update
+    return None, 'login'
+
 
 def dashboard_layout(username, role):
     if role == "COACH":
@@ -104,17 +113,17 @@ def dashboard_layout(username, role):
         ])
         return dbc.Container([
             hidden,
-            dbc.NavbarSimple(brand=f"Panel Trenera: {username}", color="dark", dark=True, className="mb-4"),
+            dbc.NavbarSimple(brand=f"Panel Trenera: {username}", color="dark", dark=True,
+                              className="mb-4",
+                              children=[dbc.Button("Wyloguj", id='logout-btn', color="secondary", size="sm")]),
             dbc.Row([
                 # ---- LEWA KOLUMNA ----
                 dbc.Col([
                     dbc.Card([
                         dbc.CardHeader("Twoi Biegacze"),
                         dbc.CardBody([
-                            dbc.InputGroup([
-                                dbc.Input(id='add-runner-input', placeholder="Username biegacza"),
-                                dbc.Button("Dodaj", id='add-runner-btn', color="primary"),
-                            ], className="mb-2"),
+                            dcc.Dropdown(id='add-runner-select', placeholder="Wybierz biegacza", className="mb-2"),
+                            dbc.Button("Dodaj", id='add-runner-btn', color="primary"),
                             html.Div(id='add-runner-msg', className="mb-3 small"),
                             html.Div(id='runners-list'),
                         ])
@@ -208,7 +217,9 @@ def dashboard_layout(username, role):
     ])
     return dbc.Container([
         hidden,
-        dbc.NavbarSimple(brand=f"Panel Biegacza: {username}", color="success", dark=True, className="mb-4"),
+        dbc.NavbarSimple(brand=f"Panel Biegacza: {username}", color="success", dark=True,
+                          className="mb-4",
+                          children=[dbc.Button("Wyloguj", id='logout-btn', color="secondary", size="sm")]),
         dbc.Row([
             dbc.Col(dbc.Card(dbc.CardBody([html.H5("Łączny dystans"),   html.H2(id='runner-total-dist')])), width=6),
             dbc.Col(dbc.Card(dbc.CardBody([html.H5("Liczba treningów"), html.H2(id='runner-count')])),      width=6),
@@ -265,29 +276,35 @@ def _fetch_runners(auth):
     return res.json() if res.status_code == 200 else []
 
 
+def _fetch_unassigned_runners(auth):
+    res = requests.get(f"{API}/runners/unassigned", auth=(auth['user'], auth['pass']), verify=False)
+    return res.json() if res.status_code == 200 else []
+
+
 @app.callback(
     [Output('runners-list', 'children'),
      Output('select-runner', 'options'),
+     Output('add-runner-select', 'options'),
      Output('add-runner-msg', 'children')],
     [Input('session-auth', 'data'),
      Input('add-runner-btn', 'n_clicks'),
      Input({'type': 'remove-runner-btn', 'index': dash.ALL}, 'n_clicks')],
-    State('add-runner-input', 'value'),
+    State('add-runner-select', 'value'),
     prevent_initial_call=False
 )
-def manage_runners(auth, add_clicks, remove_clicks, add_username):
+def manage_runners(auth, add_clicks, remove_clicks, add_runner_id):
     if not auth or auth['role'] != "COACH":
-        return [], [], ""
+        return [], [], [], ""
 
     msg = ""
     ctx = callback_context
     triggered = ctx.triggered[0]['prop_id'] if ctx.triggered else ""
 
-    if 'add-runner-btn' in triggered and add_username:
+    if 'add-runner-btn' in triggered and add_runner_id:
         res = requests.post(f"{API}/runners/add",
-                            json={"username": add_username},
+                            json={"runner_id": add_runner_id},
                             auth=(auth['user'], auth['pass']), verify=False)
-        msg = (dbc.Alert(f"Dodano: {add_username}", color="success", duration=3000)
+        msg = (dbc.Alert(f"Dodano biegacza", color="success", duration=3000)
                if res.status_code == 200
                else dbc.Alert(res.json().get('detail', 'Błąd'), color="danger", duration=4000))
 
@@ -300,6 +317,7 @@ def manage_runners(auth, add_clicks, remove_clicks, add_username):
             msg = dbc.Alert("Błąd usuwania biegacza", color="danger", duration=3000)
 
     runners = _fetch_runners(auth)
+    unassigned = _fetch_unassigned_runners(auth)
     list_items = [
         dbc.ListGroupItem([
             html.Span(f"{r['username']}  (ID: {r['id']})", className="me-auto"),
@@ -309,7 +327,8 @@ def manage_runners(auth, add_clicks, remove_clicks, add_username):
         for r in runners
     ]
     options = [{'label': r['username'], 'value': r['id']} for r in runners]
-    return dbc.ListGroup(list_items, flush=True), options, msg
+    add_options = [{'label': r['username'], 'value': r['id']} for r in unassigned]
+    return dbc.ListGroup(list_items, flush=True), options, add_options, msg
 
 
 @app.callback(

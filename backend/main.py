@@ -105,16 +105,16 @@ def get_my_runners(user: User = Depends(get_current_user), db: Session = Depends
 
 
 class AddRunnerRequest(BaseModel):
-    username: str
+    runner_id: int
 
 
 @app.post("/runners/add", response_model=UserResponse)
 def add_runner(body: AddRunnerRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "COACH":
         raise HTTPException(status_code=403, detail="Tylko trener może dodawać biegaczy")
-    runner = db.query(User).filter(User.username == body.username, User.role == "RUNNER").first()
+    runner = db.query(User).filter(User.id == body.runner_id, User.role == "RUNNER").first()
     if not runner:
-        raise HTTPException(status_code=404, detail=f"Biegacz '{body.username}' nie istnieje")
+        raise HTTPException(status_code=404, detail="Biegacz nie istnieje")
     if runner.coach_id is not None and runner.coach_id != user.id:
         raise HTTPException(status_code=409, detail="Ten biegacz należy już do innego trenera")
     if runner.coach_id == user.id:
@@ -123,6 +123,13 @@ def add_runner(body: AddRunnerRequest, user: User = Depends(get_current_user), d
     db.commit()
     db.refresh(runner)
     return runner
+
+
+@app.get("/runners/unassigned", response_model=List[UserResponse])
+def get_unassigned_runners(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "COACH":
+        raise HTTPException(status_code=403, detail="Tylko trener może przeglądać biegaczy do dodania")
+    return db.query(User).filter(User.role == "RUNNER", User.coach_id == None).all()
 
 
 @app.delete("/runners/{runner_id}")

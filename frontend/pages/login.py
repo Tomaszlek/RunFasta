@@ -25,7 +25,7 @@ layout = dbc.Container([
 
 def register_callbacks(app):
     @app.callback(
-        [Output('session-auth', 'data'),
+        [Output('session-auth', 'data', allow_duplicate=True),
          Output('login-alert', 'children')],
         Input('login-btn', 'n_clicks'),
         [State('login-user', 'value'), State('login-pass', 'value')],

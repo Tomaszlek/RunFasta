@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Depends, Response, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+from datetime import date
 from .database import engine, Base, get_db
 from .models import User, Workout
-from .schemas import UserResponse, WorkoutResponse, WorkoutPlanCreate, WorkoutCreate
+from .schemas import UserResponse, WorkoutResponse, WorkoutPlanCreate, WorkoutCreate, UserRegister
 from .auth import get_current_user
 from fpdf import FPDF
 from pydantic import BaseModel
@@ -95,6 +96,24 @@ def startup_populate(db: Session = next(get_db())):
 
 # ==================== ENDPOINTY ====================
 
+@app.post("/register", response_model=UserResponse)
+def register(data: UserRegister, db: Session = Depends(get_db)):
+    """Rejestracja nowego użytkownika (trenera lub biegacza)."""
+    # Sprawdzenie czy użytkownik już istnieje
+    existing = db.query(User).filter(User.username == data.username).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Użytkownik już istnieje")
+    
+    if data.role not in ["COACH", "RUNNER"]:
+        raise HTTPException(status_code=400, detail="Rola musi być COACH lub RUNNER")
+    
+    new_user = User(username=data.username, password=data.password, role=data.role)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+
 @app.get("/me", response_model=UserResponse)
 def get_me(user: User = Depends(get_current_user)):
     return user
@@ -166,6 +185,77 @@ def get_workouts(user: User = Depends(get_current_user), db: Session = Depends(g
         w_data.links = [{"rel": "self", "href": f"/workouts/{w.id}"}]
         if user.role == "COACH":
             w_data.links.append({"rel": "delete", "href": f"/workouts/{w.id}"})
+        results.append(w_data)
+    return results
+
+
+@app.get("/workouts/today", response_model=List[WorkoutResponse])
+def get_today_workouts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Pobierz treningi zaplanowane na dzisiaj dla danego biegacza."""
+    today = date.today()
+    workouts = db.query(Workout).filter(
+        Workout.runner_id == user.id,
+        Workout.workout_date == today,
+        Workout.is_planned == True,
+        Workout.completed == False
+    ).all()
+
+    results = []
+    for w in workouts:
+        w_data = WorkoutResponse.model_validate(w)
+        w_data.links = [
+            {"rel": "self", "href": f"/workouts/{w.id}"},
+            {"rel": "complete", "href": f"/workouts/{w.id}/complete"}
+        ]
+        results.append(w_data)
+    return results
+
+
+@app.patch("/workouts/{workout_id}/complete")
+def complete_workout(workout_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Oznacz trening jako ukończony (biegacz)."""
+    workout = db.query(Workout).filter(Workout.id == workout_id).first()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Trening nie istnieje")
+    
+    if workout.runner_id != user.id:
+        raise HTTPException(status_code=403, detail="Możesz oznaczać tylko swoje treningi")
+    
+    workout.completed = True
+    db.commit()
+    db.refresh(workout)
+    
+    return {
+        "message": f"Trening {workout_id} oznaczony jako ukończony",
+        "workout": WorkoutResponse.model_validate(workout),
+        "hateoas": [{"rel": "list", "href": "/workouts"}]
+    }
+
+
+@app.get("/workouts/runner/{runner_id}/today", response_model=List[WorkoutResponse])
+
+
+@app.get("/workouts/runner/{runner_id}/today", response_model=List[WorkoutResponse])
+def get_runner_today_workouts(runner_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Pobierz dzisiejsze treningi określonego biegacza (trener)."""
+    if user.role != "COACH":
+        raise HTTPException(status_code=403, detail="Tylko trener może przeglądać treningi swoich biegaczy")
+    
+    runner = db.query(User).filter(User.id == runner_id, User.coach_id == user.id).first()
+    if not runner:
+        raise HTTPException(status_code=404, detail="Biegacz nie znaleziony lub nie należy do Ciebie")
+    
+    today = date.today()
+    workouts = db.query(Workout).filter(
+        Workout.runner_id == runner_id,
+        Workout.workout_date == today,
+        Workout.is_planned == True
+    ).all()
+
+    results = []
+    for w in workouts:
+        w_data = WorkoutResponse.model_validate(w)
+        w_data.links = [{"rel": "self", "href": f"/workouts/{w.id}"}]
         results.append(w_data)
     return results
 
@@ -352,3 +442,8 @@ def report_plan_all(user: User = Depends(get_current_user), db: Session = Depend
 
     return Response(content=bytes(pdf.output()), media_type="application/pdf",
                     headers={"Content-Disposition": "attachment; filename=plany_wszystkich.pdf"})
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000, ssl_certfile="cert.pem", ssl_keyfile="key.pem")

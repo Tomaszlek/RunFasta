@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Boolean, Date
 from sqlalchemy.orm import relationship
+from datetime import date
 from .database import Base
 
 class User(Base):
@@ -19,3 +20,5 @@ class Workout(Base):
     time_minutes = Column(Integer)
     note = Column(String, nullable=True)
     is_planned = Column(Boolean, default=False) # True = zadanie od trenera, False = wpis biegacza
+    workout_date = Column(Date, default=date.today)  # Data treningu
+    completed = Column(Boolean, default=False)  # Czy trening został ukończony

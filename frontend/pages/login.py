@@ -3,11 +3,8 @@ import dash_bootstrap_components as dbc
 import dash
 import requests
 
-API = "https://127.0.0.1:8000"
+API = "https://192.168.43.66:8000"
 
-# Layout strony logowania.
-# Przyciski nawigacyjne (nav-to-register, nav-to-login) NIE są tu definiowane —
-# żyją w app.layout jako zawsze obecne, żeby callbacki ich zawsze znajdowały.
 layout = dbc.Container([
     dbc.Row([
         dbc.Col([
@@ -42,8 +39,7 @@ def register_callbacks(app):
         except Exception:
             return dash.no_update, dbc.Alert("Brak połączenia z serwerem!", color="warning")
 
-    # Przycisk "Zarejestruj się" widoczny na stronie logowania
-    # triggeruje ukryty nav-to-register w app.layout
+#trigger rejestracji
     @app.callback(
         Output('nav-to-register', 'n_clicks'),
         Input('nav-to-register-visible', 'n_clicks'),

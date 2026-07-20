@@ -3,7 +3,7 @@ import dash_bootstrap_components as dbc
 import dash
 import requests
 
-API = "https://127.0.0.1:8000"
+API = "https://192.168.43.66:8000"
 
 layout = dbc.Container([
     dbc.Row([
@@ -55,9 +55,7 @@ def register_callbacks(app):
             return dash.no_update, dbc.Alert(detail, color="danger")
         except Exception as e:
             return dash.no_update, dbc.Alert(f"Błąd: {str(e)}", color="danger")
-
-    # Przycisk "Zaloguj się" widoczny na stronie rejestracji
-    # triggeruje ukryty nav-to-login w app.layout
+#trigger logowania
     @app.callback(
         Output('nav-to-login', 'n_clicks'),
         Input('nav-to-login-visible', 'n_clicks'),
